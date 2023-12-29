@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/johnlin10/agriscientist-ai-web/raw/main/public/agriscientist-ai.ico" width="120px;">
+<img src="https://github.com/johnlin10/agriscientist-ai-web/raw/main/public/agriscientist-ai.ico" alt="agriscientist-ai-icon" width="120px;" />
 
 # 田野數據科學家 RP
 
