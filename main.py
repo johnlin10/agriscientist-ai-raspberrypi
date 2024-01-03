@@ -543,6 +543,8 @@ async def tts_whisper(text):
 
 
 # 語音交流主程式
+## 正在最佳化語音交流體驗
+## 將在不久後推出新版本
 def chatToAssistant():
     THRESHOLD = 1600  # 聲音閾值設定
 
