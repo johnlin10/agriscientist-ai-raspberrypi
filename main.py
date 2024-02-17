@@ -50,7 +50,7 @@ firebase_admin.initialize_app(
 db = firestore.client()
 
 # OpenAI
-openai.api_key = "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"
+# API Key 要在運行此程式前，設定好環境變數
 chat_history_ref = db.collection("chat").document("chat_history")
 
 chat_history_five_rounds = [
@@ -629,7 +629,9 @@ def chatToAssistant():
 
 
 # 多進程
-sensor_process_thread = multiprocessing.Process(target=sensor_process)  # 溫濕度感測器數據
+sensor_process_thread = multiprocessing.Process(
+    target=sensor_process
+)  # 溫濕度感測器數據
 plantLights_thread = multiprocessing.Process(target=plantLights)  # 植物燈
 pumpingMotor_thread = multiprocessing.Process(target=pumpingMotor)  # 土壤濕度
 chatToAssistant_thread = multiprocessing.Process(target=chatToAssistant)  # 語音交互
