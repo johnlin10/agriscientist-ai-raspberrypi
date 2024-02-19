@@ -151,6 +151,7 @@ global_thread = None  # thread 變量 - 對話線程
 
 # 資料度 Ref
 projProgRef = db.document("projPregress/projPregress")  # 專題進度
+assistant_status_ref = db.collection("chat").document("assistant_status")
 sensors_Ref = db.collection("sensors_data").document("sensors")  #
 temperatureData_Ref = db.collection("sensors_data").document("temperature")  # 溫度
 humidityData_Ref = db.collection("sensors_data").document("humidity")  # 濕度
@@ -177,23 +178,6 @@ GPIO.setup(PumpingMotorPin, GPIO.OUT)
 GPIO.setup(LEDPin, GPIO.OUT)
 
 
-# 全局錯誤顯示
-def errorPrint(error):
-    print(f"Error: {error}")
-
-
-# 獲取專題進度
-def readProjProg():
-    projProg_data = projProgRef.get()
-    if projProg_data.exists:
-        data = projProg_data.to_dict()
-        data["data"].sort(key=itemgetter("time"), reverse=True)  # 以 timestramp 排序
-        return data["data"]
-    else:
-        errorPrint("「專題進度」無法讀取！")
-        return -1
-
-
 # 讀取 SPI 腳位訊號
 def ReadChannel(channel):
     adc = spi.xfer2([1, (8 + channel) << 4, 0])
@@ -201,41 +185,16 @@ def ReadChannel(channel):
     return data
 
 
-# 顯示專題進度
-# projProg_data = readProjProg()
-# print("\n【專題進度】\n")
-# for item in projProg_data:
-#     print(f"{item['time']} | {item['title']}\n{item['content']}\n")
-
-
 # 專門用於將感測器數據集以特定形式上傳至 Firestore
-def writeSensorDataToCloudDatabase(ref, data):
+def writeSensorDataToFirestore(ref, data):
+    # 檢查文檔是否存在於指定的引用(ref)
     checkDoc = ref.get()
     if checkDoc.exists:
+        # 如果文檔存在，則將數據添加到現有數據中
         ref.update({"data": firestore.ArrayUnion([data])})
     else:
+        # 如果文檔不存在，則創建新的集合並添加第一條數據
         ref.set({"data": firestore.ArrayUnion([data])})
-
-
-def updateData(ref, data):
-    ref.update({"data": firestore.ArrayUnion([data])})
-
-
-def setData(ref, data):
-    ref.set({"data": firestore.ArrayUnion([data])})
-
-
-def getFirebaseData(ref):
-    doc = ref.get()
-
-    if doc.exists:
-        return doc.to_dict()
-    else:
-        print("No such document!")
-        return None
-
-
-print("<<< start >>>")
 
 
 ### 線程 ###
@@ -252,23 +211,21 @@ def sensor_process():
             soilHumidity = ReadChannel(0)  # 土壤濕度感測器
             water = ReadChannel(2)  # 水位
 
-            # 檢查、顯示及上傳溫濕度數據
+            # 列印感測器數據
             if humidity is not None and temperature is not None:
                 print(
                     f"==================\n溫度: {temperature:.1f}°C ｜ 濕度: {humidity:.1f}%"
                 )
-
             if light is not None:
                 print("光照感測器：", light)
-
             if soilHumidity is not None:
                 print("土壤濕度數據：", abs(soilHumidity - 1000) / 7)
-
             if water is not None:
                 print("水位：", water)
 
+            # 統合數據
             soilHumidity_persen = abs(soilHumidity - 1000) / 7  # 轉換為 % 數
-            sensors_data = {
+            sensors_datas = {
                 "temperature": f"{temperature:.1f}",
                 "humidity": f"{humidity:.1f}",
                 "light": light,
@@ -277,9 +234,10 @@ def sensor_process():
                 "timestamp": datetime.datetime.utcnow(),
             }
 
-            writeSensorDataToCloudDatabase(sensors_Ref, sensors_data)
+            # 更新到雲端資料庫
+            writeSensorDataToFirestore(sensors_Ref, sensors_datas)
 
-            time.sleep(60)
+            time.sleep(60)  # 數據更新間隔
             GPIO.cleanup()
         except Exception as e:
             print(e)
@@ -547,6 +505,19 @@ async def tts_whisper(text):
 ## 將在不久後推出新版本
 def chatToAssistant():
     THRESHOLD = 1600  # 聲音閾值設定
+    KEYWORDS = [
+        "你好",
+        "你們好",
+        "哈囉",
+        "Hi",
+        "Hello",
+        "嗨",
+        "嘿",
+        "Hey",
+        "在嗎",
+    ]  # 關鍵詞設定
+    # 標記用戶是否已激活
+    is_activated = False
 
     # 初始化 Recognizer 和 Microphone 一次
     r = sr.Recognizer()
@@ -585,47 +556,67 @@ def chatToAssistant():
     sys.stdout.flush()
 
     while True:
-        # 啟動時預設輸入模式
+        # 開發測試用的輸入模式
         # text_input = input("請輸入文字開始對話，或者按 Enter 直接使用語音輸入：")
         # if text_input.strip() != "":
         #     chat(text_input)
         # else:
+
         with mic as source:
-            print("【監聽中...】")
-            r.adjust_for_ambient_noise(source)  # 自動調整麥克風噪音水平
-            audio_stream = r.listen(source, timeout=None)
+            assistant_status_ref.set({"status": "false"})
+            r.adjust_for_ambient_noise(source, duration=2)  # 自動調整麥克風噪音水平
+            r.dynamic_energy_threshold = True
 
-        # Whisper
-        # with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
-        #     audio_path = temp_file.name
-        #     with open(audio_path, "wb") as f:
-        #         f.write(audio_stream.get_wav_data())
+            # 持續聆聽並辨識關鍵詞
+            while not is_activated:
+                print("【聆聽喚醒詞中...】：你好, 哈囉, 嗨, Hello, Hi")
+                audio_data = r.listen(source)
+                try:
+                    text = r.recognize_google(audio_data, language="zh-TW")
+                    if any(keyword in text for keyword in KEYWORDS):
+                        is_activated = True  # 對話已開啟
+                        assistant_status_ref.set({"status": "true"})
+                        print("【請說...】")
+                        audio_data = r.listen(source)
+                        try:
+                            text = r.recognize_google(audio_data, language="zh-TW")
+                            if text:
+                                print(f"【{text}】")
+                                assistant_status_ref.set({"status": "loading"})
+                                chat(text)
+                        except sr.UnknownValueError:
+                            print("【無法辨識語音】")
+                        except sr.RequestError as e:
+                            print(
+                                f"【無法從 Google Speech Recognition 服務取得結果】：{e}"
+                            )
+                except sr.UnknownValueError:
+                    print("【沒有辨識到喚醒詞...】")
+                except sr.RequestError as e:
+                    print(f"【無法從 Google Speech Recognition 服務取得結果】：{e}")
 
-        # try:
-        #     print("【語音辨識中...】")
-        #     text = recognize_with_whisper(audio_path)
-        #     print(f"【語音辨識結果 Whisper】=> {text}")
-        #     chat(text)
-        # except Exception as e:
-        #     print(f"【語音辨識錯誤】：{e}")
+            # 對話已開啟，持續聆聽
+            last_audio_time = time.time()
+            while is_activated:
+                assistant_status_ref.set({"status": "true"})
+                print("【繼續說...】")
+                audio_data = r.listen(source)
+                try:
+                    text = r.recognize_google(audio_data, language="zh-TW")
+                    if text:
+                        print(f"【{text}】")
+                        assistant_status_ref.set({"status": "loading"})
+                        chat(text)
+                        last_audio_time = time.time()
+                except sr.UnknownValueError:
+                    print("【沒有辨識到語音】")
+                except sr.RequestError as e:
+                    print(f"【無法從 Google Speech Recognition 服務取得結果】：{e}")
 
-        # Speech Recognition (Google STT)
-        try:
-            print("【語音辨識中...】")
-            text = r.recognize_google(audio_stream, language="zh-TW")
-            print(f"【語音辨識結果】=> {text}")
-            chat(text)
-        except sr.UnknownValueError:
-            print("【無法識別語音】")
-        except sr.RequestError as e:
-            print(f"【無法從 Google Speech Recognition 服務取得結果】：{e}")
-
-        # 檢測聲音是否超過閾值
-        frame_data = np.frombuffer(audio_stream.frame_data, dtype=np.int16)
-        rms = np.sqrt(np.mean(frame_data.astype(float) ** 2))
-
-        if rms > THRESHOLD:
-            print("【辨識到高強度聲音】")  # OpenAI
+                if time.time() - last_audio_time > 15:
+                    is_activated = False
+                    assistant_status_ref.set({"status": "false"})
+                    break
 
 
 # 多進程
@@ -637,7 +628,8 @@ pumpingMotor_thread = multiprocessing.Process(target=pumpingMotor)  # 土壤濕�
 chatToAssistant_thread = multiprocessing.Process(target=chatToAssistant)  # 語音交互
 
 # 啟動進程
+print("<<< start >>>")
 sensor_process_thread.start()
 plantLights_thread.start()
 pumpingMotor_thread.start()
-# chatToAssistant_thread.start()
+chatToAssistant_thread.start()
