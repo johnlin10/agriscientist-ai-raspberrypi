@@ -1,10 +1,5 @@
-import datetime
-
-from modules.chatToGPT import createChat
-from modules.dataAnalysis import dataAnalysistoText
-
-# 對語音助理進行數據融合測試
-import openai
+from chatToGPT import createChat
+from dataAnalysis import dataAnalysistoText, dataTrendText
 
 # Firebase
 import firebase_admin
@@ -12,7 +7,7 @@ from firebase_admin import credentials, initialize_app
 from firebase_admin import firestore
 from firebase_admin import storage
 
-cred = credentials.Certificate("../serviceAccountKey.json")
+cred = credentials.Certificate("./serviceAccountKey.json")
 firebase_admin.initialize_app(
     cred,
     {"storageBucket": "agriscientist-ai.appspot.com"},
@@ -133,9 +128,10 @@ def chat(content):
     # 蒐集數據分析結果
     print("【正在分析數據...】")
     data_analysis_text = dataAnalysistoText(db)
+    data_trend_text = dataTrendText(db)
     data_prompt = {
         "role": "system",
-        "content": f"{data_analysis_text}",
+        "content": f"{data_analysis_text}; 趨勢分析結果：\n{data_trend_text}",
     }
     chat_history.append(data_prompt)
     chat_history_five_rounds.append(data_prompt)
