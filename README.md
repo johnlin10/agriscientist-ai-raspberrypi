@@ -23,7 +23,7 @@
 
 [Link to DESCRIPTION]:https://img.shields.io/badge/查看說明_>-3f3f3f?style=for-the-badge
 
-[DESCRIPTION Link]: https://github.com/johnlin10/agriscientist-ai-web
+[DESCRIPTION Link]: /DESCRIPTION.md
 
 [![Link to DESCRIPTION]][DESCRIPTION Link]
 
