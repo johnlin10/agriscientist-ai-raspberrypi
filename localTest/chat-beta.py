@@ -133,8 +133,6 @@ def chat(content):
         "role": "system",
         "content": f"{data_analysis_text}; 趨勢分析結果：\n{data_trend_text}",
     }
-    chat_history.append(data_prompt)
-    chat_history_five_rounds.append(data_prompt)
 
     print("【正在等待 GPT-4 Turbo 回應...】")
 

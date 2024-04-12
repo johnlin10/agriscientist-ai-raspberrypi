@@ -3,19 +3,6 @@ from scipy.stats import linregress
 
 import statistics
 
-# Firebase
-# import firebase_admin
-# from firebase_admin import credentials, initialize_app
-# from firebase_admin import firestore
-# from firebase_admin import storage
-
-# cred = credentials.Certificate("./serviceAccountKey.json")
-# firebase_admin.initialize_app(
-#     cred,
-#     {"storageBucket": "agriscientist-ai.appspot.com"},
-# )
-# db = firestore.client()
-
 sensor_data_list = []  # 感測器數據列表
 
 
@@ -288,7 +275,7 @@ def data_analysis_trends_to_firestore(sensor_data):
 def store_analysis_results(db, analysis_structures):
     for analysis in analysis_structures:
         # 创建文档 ID，格式为 "time_range-sensor_type-unique_identifier"
-        doc_id = f"{analysis['timeRange']}-{analysis['sensorType']}"
+        doc_id = f"{analysis['sensorType']}-{analysis['timeRange']}"
 
         # 使用时间区段类型和感测器类型作为文档 ID
         doc_ref = db.collection("trend_analysis").document(doc_id)

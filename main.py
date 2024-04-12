@@ -2,6 +2,12 @@
 
 # OpenAI
 from openai import OpenAI
+from modules.chatToGPT import createChat
+from modules.dataAnalysis import (
+    dataAnalysistoText,
+    dataTrendText,
+    dataAnalysisTrendsToFirestore,
+)
 
 # 基礎庫
 import time
@@ -141,20 +147,9 @@ chat_history = [
 ]
 
 
-# GPT-4 Turbo
-KEEP_RECENT = 10  # 設置要保留的預訓練 Prompt
-MAX_HISTORY = KEEP_RECENT + 10  # 設定最大歷史紀錄數量
-
 # 資料度 Ref
 chat_history_ref = db.collection("chat").document("chat_history")
 assistant_status_ref = db.collection("chat").document("assistant_status")
-sensors_Ref = db.collection("sensors_data").document("sensors")  #
-sensors_Ref_2 = db.collection("sensors_data").document("sensors_2")  #
-temperatureData_Ref = db.collection("sensors_data").document("temperature")  # 溫度
-humidityData_Ref = db.collection("sensors_data").document("humidity")  # 濕度
-lightData_Ref = db.collection("sensors_data").document("light")  # 光度
-soilHumidity_Ref = db.collection("sensors_data").document("soilHumidity")  # 土壤濕度
-water_Ref = db.collection("sensors_data").document("water")  # 水位
 
 # SPI
 spi = spidev.SpiDev()
@@ -175,6 +170,9 @@ GPIO.setup(PumpingMotorPin, GPIO.OUT)
 GPIO.setup(LEDPin, GPIO.OUT)
 
 
+# === 輔助函式 =============================================== #
+
+
 # 全局錯誤顯示
 def errorPrint(error):
     print(f"Error: {error}")
@@ -185,24 +183,6 @@ def ReadChannel(channel):
     adc = spi.xfer2([1, (8 + channel) << 4, 0])
     data = ((adc[1] & 3) << 8) + adc[2]
     return data
-
-
-def updateData(ref, data):
-    ref.update({"data": firestore.ArrayUnion([data])})
-
-
-def setData(ref, data):
-    ref.set({"data": firestore.ArrayUnion([data])})
-
-
-def getFirebaseData(ref):
-    doc = ref.get()
-
-    if doc.exists:
-        return doc.to_dict()
-    else:
-        print("No such document!")
-        return None
 
 
 # 獲取當前週的第一天（星期一）的日期
@@ -237,10 +217,9 @@ def writeSensorDataToCloudDatabase(db, data):
         weekly_ref.set({"data": firestore.ArrayUnion([data])})
 
 
-print("<<< start >>>")
+# === 感測器與自動化 =============================================== #
 
 
-### 線程 ###
 # 讀取感測器數據，並同步至雲端
 def sensor_process():
     while True:
@@ -336,39 +315,9 @@ def pumpingMotor():
     #         print("請輸入操作碼")
 
 
-# 語音辨識(棄用)
-def speechRecognition():
-    THRESHOLD = 1600  # 聲音閾值設定
-
-    # 初始化Recognizer和Microphone一次
-    r = sr.Recognizer()
-    mic = sr.Microphone()
-
-    while True:
-        with mic as source:
-            print("【監聽中...】")
-            r.adjust_for_ambient_noise(source)  # 自動調整麥克風噪音水平
-            audio_stream = r.listen(source, timeout=None)
-
-        try:
-            print("【語音辨識中...】")
-            text = r.recognize_google(audio_stream, language="zh-TW")
-            print(f"【語音辨識結果】=> {text}")
-            chat(text)
-        except sr.UnknownValueError:
-            print("【無法識別語音】")
-        except sr.RequestError as e:
-            print(f"【無法從Google Speech Recognition 服務取得結果】：{e}")
-
-        # 檢測聲音是否超過閾值
-        frame_data = np.frombuffer(audio_stream.frame_data, dtype=np.int16)
-        rms = np.sqrt(np.mean(frame_data.astype(float) ** 2))
-
-        if rms > THRESHOLD:
-            print("【辨識到高強度聲音】")
+# === 語音交互 輔助函式 =============================================== #
 
 
-### 語音交流
 # 將對話紀錄同步到 Firebase
 def sync_chat_to_firestore(chat_history):
     try:
@@ -405,27 +354,6 @@ def upload_audio_to_firebase_storage(file_path):
     file_url = f"https://firebasestorage.googleapis.com/v0{blob.path}?alt=media&token={new_token}"
 
     return file_url
-
-
-# 向 GPT 模型請求回復
-def send_chat_request(chat_history):
-    """向 GPT 模型請求回復
-
-    :param chat_history: 欲送出的聊天記錄 list
-    :type chat_history: [list]
-    :return: GPT 返回的原始回覆列表
-    :rtype: [list]
-    """
-
-    # 向 OpenAI 發送對話請求
-    response = client.chat.completions.create(
-        model="gpt-4-1106-preview",
-        messages=chat_history,
-        max_tokens=2048,
-        temperature=0.7,  # 設置溫度以增加創造性
-    )
-
-    return response
 
 
 # 過濾五輪聊天紀錄，並保留預設資訊 - 用於減少對話 Token
@@ -468,7 +396,8 @@ async def openai_tts(text):
     return response
 
 
-# TTS - 將文字轉為語音儲存並播放出來，再將帶有音頻的對話紀錄同步至雲端。
+# 將文字轉為語音儲存並播放出來
+# 並將帶有音頻的對話紀錄及語音同步至雲端
 async def text_to_speech(text):
     """
     將文字轉為語音儲存並播放出來，再將帶有音頻的對話紀錄同步至雲端。
@@ -516,6 +445,14 @@ async def text_to_speech(text):
     print("【語音結束】")
 
 
+PRE_PROMPT = 11  # PrePrompt
+DATA_ANALYSIS = 1  # Analysis Prompt
+USER_MAX_HISTORY = 5  # 欲保留的最大使用者歷史對話數量
+
+KEEP_RECENT = PRE_PROMPT + DATA_ANALYSIS  # All Prompt
+MAX_HISTORY = KEEP_RECENT + (USER_MAX_HISTORY * 2)  # 總計最大歷史紀錄數量
+
+
 # 對話主函式 - 請求對話、文字轉語音
 def chat(content):
     """
@@ -524,6 +461,17 @@ def chat(content):
     @param content: 用戶的輸入
     @type content: String
     """
+    global chat_history, chat_history_five_rounds, db
+
+    # print("【正在分析數據...】")
+    # data_analysis_text = dataAnalysistoText(db)
+    # data_trend_text = dataTrendText(db)
+    # data_analysis_prompt = {
+    #     "role": "system",
+    #     "content": f"{data_analysis_text}; 趨勢分析結果：\n{data_trend_text}",
+    # }
+    # chat_history.append(data_analysis_prompt)
+    # chat_history_five_rounds.append(data_analysis_prompt)
 
     print("【正在等待 GPT-4 Turbo 回應...】")
 
@@ -538,7 +486,7 @@ def chat(content):
     # 同步至雲端
     sync_chat_to_firestore(chat_history)
 
-    response = send_chat_request(chat_history_five_rounds)
+    response = createChat(chat_history_five_rounds)
 
     # 提取 GPT 回覆內容
     gpt_response_content = response.choices[0].message.content
@@ -546,17 +494,12 @@ def chat(content):
     print(
         f"\n== GPT-4 =====================\n{gpt_response_content}\n=============================\n"
     )
-
     # 調用 text_to_speech 函數文字轉語音（在語音生成以後，對話紀錄將更新到 Firestore(含音頻 URL))
     asyncio.run(text_to_speech(gpt_response_content))
-
     # 檢查歷史對話記錄長度，如果超過 MAX_HISTORY，則刪除 KEEP_RECENT index 後的多餘的對話紀錄，直到剩下 MAX_HISTORY 條紀錄
     asyncio.run(filter_chat_history_in_five_round())
-
     # 語音播放完畢後，列印完整對話
     printChatHistory()
-
-    # 退出函數，回到主程式 main
 
 
 # 清除雲端所有對話
@@ -601,11 +544,15 @@ def clear_audio_files():
     sys.stdout.flush()
 
 
-# 主程式
+# === 語音交互 輔助函式 =============================================== #
+
+
+# 語音交互主程式
 def assistant():
     """
     語音交互主程式
     """
+    # 關鍵詞設定
     KEYWORDS = [
         "你好",
         "你們好",
@@ -616,19 +563,18 @@ def assistant():
         "嘿",
         "Hey",
         "在嗎",
-    ]  # 關鍵詞設定
+    ]
     # 標記用戶是否已激活
     is_activated = False
+
+    # 清除對話
+    clear_chat()
+    # 清除所有音頻文件
+    clear_audio_files()
 
     # 初始化 Recognizer 和 Microphone 一次
     r = sr.Recognizer()
     mic = sr.Microphone()
-
-    # 清除對話
-    clear_chat()
-
-    # 清除所有音頻文件
-    clear_audio_files()
 
     while True:
         with mic as source:
@@ -688,6 +634,19 @@ def assistant():
                     break
 
 
+# === 線程 =============================================== #
+
+
+def data_analysis():
+    global db
+    while True:
+        dataAnalysisTrendsToFirestore(db)
+        time.sleep(600)  # 十分鐘重新分析最新趨勢
+
+
+# === 線程 =============================================== #
+
+
 # 多進程
 sensor_process_thread = multiprocessing.Process(
     target=sensor_process
@@ -695,9 +654,11 @@ sensor_process_thread = multiprocessing.Process(
 plantLights_thread = multiprocessing.Process(target=plantLights)  # 植物燈
 pumpingMotor_thread = multiprocessing.Process(target=pumpingMotor)  # 土壤濕度
 assistant_thread = multiprocessing.Process(target=assistant)  # 語音交互
+dataAnalysisTrend_thread = multiprocessing.Process(target=data_analysis)  # 趨勢分析
 
 # 啟動進程
 sensor_process_thread.start()
 plantLights_thread.start()
 pumpingMotor_thread.start()
 # assistant_thread.start()
+dataAnalysisTrend_thread.start()
