@@ -274,15 +274,13 @@ def data_analysis_trends_to_firestore(sensor_data):
 # 將分析結果寫入 Firestore
 def store_analysis_results(db, analysis_structures):
     for analysis in analysis_structures:
-        # 创建文档 ID，格式为 "time_range-sensor_type-unique_identifier"
         doc_id = f"{analysis['sensorType']}-{analysis['timeRange']}"
 
-        # 使用时间区段类型和感测器类型作为文档 ID
         doc_ref = db.collection("trend_analysis").document(doc_id)
         doc_ref.set(analysis)
 
 
 def dataAnalysisTrendsToFirestore(db):
-    sensor_data = get_data(db)  # 假設這個函數返回感測器的數據
+    sensor_data = get_data(db)  # 返回感測器的數據
     analysis_structures = data_analysis_trends_to_firestore(sensor_data)
     store_analysis_results(db, analysis_structures)
