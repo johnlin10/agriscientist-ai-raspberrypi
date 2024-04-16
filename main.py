@@ -279,10 +279,6 @@ def plantLights():
         else:
             GPIO.output(LEDPin, GPIO.LOW)
 
-        # GPIO.output(LEDPin, GPIO.HIGH)
-        # time.sleep(1)
-        # GPIO.output(LEDPin, GPIO.LOW)
-
         time.sleep(1)
 
 
@@ -298,21 +294,6 @@ def pumpingMotor():
             GPIO.output(PumpingMotorPin, GPIO.LOW)
         else:
             GPIO.output(PumpingMotorPin, GPIO.LOW)
-        # else:
-        #     time.sleep(15)
-    #     control_number = input("請輸入抽水馬達操作碼（1.啟動 2.關閉）：", None)
-
-    #     if control_number.strip() != "":
-    #         if control_number == "1":
-    #             GPIO.output(PumpingMotorPin, GPIO.HIGH)
-    #             print("馬達已啟動")
-    #         elif control_number == "2":
-    #             GPIO.output(PumpingMotorPin, GPIO.LOW)
-    #             print("馬達已關閉")
-    #         else:
-    #             print("操作碼無效")
-    #     else:
-    #         print("請輸入操作碼")
 
 
 # === 語音交互 輔助函式 =============================================== #
