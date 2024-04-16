@@ -8,9 +8,6 @@
 ![GitHub last commit (by committer)](https://img.shields.io/github/last-commit/johnlin10/agriscientist-ai-raspberrypi?style=for-the-badge&labelColor=21592d&color=183d20)
 ![Badge Likes](https://img.shields.io/github/stars/johnlin10/agriscientist-ai-raspberrypi?style=for-the-badge&labelColor=21592d&color=183d20&logoColor=white&logo=Trustpilot)
 
-[Link to Web repository Button]:https://img.shields.io/badge/前往_Web_儲存庫_>-4ba2e9?style=for-the-badge
-[Web repository Link]: https://github.com/johnlin10/agriscientist-ai-web
-
 基於農場數據分析為基礎，  
 並以語音交互為核心的專題作品。  
 
@@ -19,9 +16,7 @@
 
 -----
 
-[![Link to Web repository Button]][Web repository Link]
-
-[Link to DESCRIPTION]:https://img.shields.io/badge/查看說明_>-3f3f3f?style=for-the-badge
+[Link to DESCRIPTION]:https://img.shields.io/badge/程式說明_>-3f3f3f?style=for-the-badge
 
 [DESCRIPTION Link]: /DESCRIPTION.md
 
