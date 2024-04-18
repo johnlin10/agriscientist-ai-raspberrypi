@@ -171,14 +171,7 @@ GPIO.setup(PumpingMotorPin, GPIO.OUT)
 GPIO.setup(LEDPin, GPIO.OUT)
 
 
-# === 輔助函式 =============================================== #
-
-
-# 讀取 SPI 腳位訊號
-def ReadChannel(channel):
-    adc = spi.xfer2([1, (8 + channel) << 4, 0])
-    data = ((adc[1] & 3) << 8) + adc[2]
-    return data
+# *=== 雲端操作 =============================================== #
 
 
 # 獲取當前週的第一天（星期一）的日期
@@ -200,7 +193,7 @@ def get_or_create_weekly_document(db, date):
 
 # 專門用於將傳感器數據及以特定形式上傳至 Firestore
 def writeSensorDataToCloudDatabase(db, data):
-    # 獲取當前週的開始日期
+    # 獲取當前週的開始日期（星期一）
     week_start_date = get_current_week_start_date()
     # 獲取或創建對應週的document引用
     weekly_ref = get_or_create_weekly_document(db, week_start_date)
@@ -213,7 +206,14 @@ def writeSensorDataToCloudDatabase(db, data):
         weekly_ref.set({"data": firestore.ArrayUnion([data])})
 
 
-# === 感測器與自動化 =============================================== #
+# *=== 感測器與自動化 =============================================== #
+
+
+# 讀取 SPI 腳位訊號
+def ReadChannel(channel):
+    adc = spi.xfer2([1, (8 + channel) << 4, 0])
+    data = ((adc[1] & 3) << 8) + adc[2]
+    return data
 
 
 # 讀取感測器數據，並同步至雲端
@@ -240,7 +240,7 @@ def sensor_process():
                 "timestamp": datetime.datetime.now(ZoneInfo("Asia/Taipei")),
             }
 
-            # 獲取當前週的文件引用
+            # 同步至雲端
             writeSensorDataToCloudDatabase(db, sensors_data)
 
             time.sleep(300)
@@ -261,10 +261,6 @@ def plantLights():
         else:
             GPIO.output(LEDPin, GPIO.LOW)
 
-        # GPIO.output(LEDPin, GPIO.HIGH)
-        # time.sleep(1)
-        # GPIO.output(LEDPin, GPIO.LOW)
-
         time.sleep(1)
 
 
@@ -280,24 +276,9 @@ def pumpingMotor():
             GPIO.output(PumpingMotorPin, GPIO.LOW)
         else:
             GPIO.output(PumpingMotorPin, GPIO.LOW)
-        # else:
-        #     time.sleep(15)
-    #     control_number = input("請輸入抽水馬達操作碼（1.啟動 2.關閉）：", None)
-
-    #     if control_number.strip() != "":
-    #         if control_number == "1":
-    #             GPIO.output(PumpingMotorPin, GPIO.HIGH)
-    #             print("馬達已啟動")
-    #         elif control_number == "2":
-    #             GPIO.output(PumpingMotorPin, GPIO.LOW)
-    #             print("馬達已關閉")
-    #         else:
-    #             print("操作碼無效")
-    #     else:
-    #         print("請輸入操作碼")
 
 
-# === 語音交互 輔助函式 =============================================== #
+# *=== 語音交互 輔助函式 =============================================== #
 
 
 # 將對話紀錄同步到 Firebase
@@ -427,6 +408,62 @@ async def text_to_speech(text):
     print("【語音結束】")
 
 
+# 清除雲端所有對話
+def clear_chat():
+    """
+    清除對話
+    """
+    sys.stdout.write("【正在清除上次對話...】")
+    sys.stdout.flush()
+    success_sync_chats = sync_chat_to_firestore(chat_history)
+    if success_sync_chats:
+        sys.stdout.write("\r【已清除上次對話】    \n")
+        sys.stdout.flush()
+    else:
+        sys.stdout.write("\r【清除對話失敗】      \n")
+        sys.stdout.flush()
+
+
+# 清除雲端所有音頻文件
+def clear_audio_files():
+    """
+    清除所有音頻文件
+    """
+    bucket = storage.bucket()
+    prefix = "assets/audios/"
+    blobs = bucket.list_blobs(prefix=prefix)  # 所有文件对象
+    sys.stdout.write("【正在清除上次段話的音頻...】")
+    sys.stdout.flush()
+    for blob in blobs:
+        try:
+            blob.delete()
+            sys.stdout.write(f"\r【正在清除上次段話的音頻...{blob.name}】")
+            sys.stdout.flush()
+        except Exception as e:
+            sys.stdout.write(
+                f"\r【音頻清除失敗 {blob.name}: {e}                                                                   "
+            )
+            sys.stdout.flush()
+    sys.stdout.write(
+        "\r【已清除上次段話的音頻】                                                                             \n"
+    )
+    sys.stdout.flush()
+
+
+# *=== 數據分析 =============================================== #
+
+
+# 數據趨勢分析，並同步到雲端
+def data_analysis():
+    global db
+
+    while True:
+        dataAnalysisTrendsToFirestore(db)
+        time.sleep(600)  # 每十分鐘重新分析最新趨勢
+
+
+# *=== 語音交互 =============================================== #
+
 PRE_PROMPT = 11  # PrePrompt
 DATA_ANALYSIS = 1  # Analysis Prompt
 USER_MAX_HISTORY = 5  # 欲保留的最大使用者歷史對話數量
@@ -482,51 +519,6 @@ def chat(content):
     asyncio.run(filter_chat_history_in_five_round())
     # 語音播放完畢後，列印完整對話
     printChatHistory()
-
-
-# 清除雲端所有對話
-def clear_chat():
-    """
-    清除對話
-    """
-    sys.stdout.write("【正在清除上次對話...】")
-    sys.stdout.flush()
-    success_sync_chats = sync_chat_to_firestore(chat_history)
-    if success_sync_chats:
-        sys.stdout.write("\r【已清除上次對話】    \n")
-        sys.stdout.flush()
-    else:
-        sys.stdout.write("\r【清除對話失敗】      \n")
-        sys.stdout.flush()
-
-
-# 清除雲端所有音頻文件
-def clear_audio_files():
-    """
-    清除所有音頻文件
-    """
-    bucket = storage.bucket()
-    prefix = "assets/audios/"
-    blobs = bucket.list_blobs(prefix=prefix)  # 所有文件对象
-    sys.stdout.write("【正在清除上次段話的音頻...】")
-    sys.stdout.flush()
-    for blob in blobs:
-        try:
-            blob.delete()
-            sys.stdout.write(f"\r【正在清除上次段話的音頻...{blob.name}】")
-            sys.stdout.flush()
-        except Exception as e:
-            sys.stdout.write(
-                f"\r【音頻清除失敗 {blob.name}: {e}                                                                   "
-            )
-            sys.stdout.flush()
-    sys.stdout.write(
-        "\r【已清除上次段話的音頻】                                                                             \n"
-    )
-    sys.stdout.flush()
-
-
-# === 語音交互 輔助函式 =============================================== #
 
 
 # 語音交互主程式
@@ -616,18 +608,7 @@ def assistant():
                     break
 
 
-# === 線程 =============================================== #
-
-
-def data_analysis():
-    global db
-
-    while True:
-        dataAnalysisTrendsToFirestore(db)
-        time.sleep(600)  # 十分鐘重新分析最新趨勢
-
-
-# === 線程 =============================================== #
+# *=== 線程 =============================================== #
 
 
 # 多進程

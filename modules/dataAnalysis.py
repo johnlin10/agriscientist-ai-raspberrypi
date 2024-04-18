@@ -210,7 +210,7 @@ def data_analysis_trends_to_text(sensor_data):
     return analysis_texts
 
 
-# 資料趨勢分析
+# 資料趨勢分析文本（生成用於給GPT進行理解的Prompt）
 def dataTrendText(db):
     sensor_data = get_data(db)
     analysis_texts = data_analysis_trends_to_text(sensor_data)
@@ -284,28 +284,27 @@ def data_analysis_trends_to_firestore(sensor_data):
 # 將分析結果寫入 Firestore
 def store_analysis_results(db, analysis_results_by_sensor):
     for sensor_type, analysis_list in analysis_results_by_sensor.items():
-        # 创建文档ID，格式为"sensor_type"
+        # 創建文檔ID，格式為"sensor_type"
         doc_id = f"{sensor_type}"
 
-        # 获取或创建感测器类型对应的文档引用
+        # 獲取或創建感測器類型對應的文檔引用
         doc_ref = db.collection("trend_analysis").document(doc_id)
 
-        # 准备要上传的数据，这里我们构建一个以时间范围为键的字典
-        # 每个键对应的值是在该时间范围内的趋势分析结果
+        # 以時間範圍為鍵的dict
+        # 每個鍵對應的值是在該時間範圍內的趨勢分析結果
         trends_by_time_range = {}
         for analysis in analysis_list:
             time_range = analysis["timeRange"]
-            # 将时间范围作为键，趋势分析结果作为值添加到trends_by_time_range字典中
+            # 將時間範圍作為鍵，趨勢分析結果作為值添加到trends_by_time_range dict中
             if time_range not in trends_by_time_range:
                 trends_by_time_range[time_range] = []
             trends_by_time_range[time_range].append(analysis)
 
-        # 更新或设置文档内容，这里我们使用set方法，如果需要更新可以使用update方法
-        # 使用set时，如果文档不存在，它将被创建
+        # 更新或設置doc內容，這裡使用set方法，新的趨勢分析覆蓋舊的
         doc_ref.set({"trends_by_time_range": trends_by_time_range})
 
 
 def dataAnalysisTrendsToFirestore(db):
-    sensor_data = get_data(db)  # 假設這個函數返回感測器的數據
+    sensor_data = get_data(db)
     analysis_results_by_sensor = data_analysis_trends_to_firestore(sensor_data)
     store_analysis_results(db, analysis_results_by_sensor)
