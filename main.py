@@ -12,6 +12,7 @@ from modules.dataAnalysis import (
 # 基礎庫
 import time
 import datetime
+from zoneinfo import ZoneInfo
 import multiprocessing
 from operator import itemgetter
 import asyncio
@@ -173,11 +174,6 @@ GPIO.setup(LEDPin, GPIO.OUT)
 # === 輔助函式 =============================================== #
 
 
-# 全局錯誤顯示
-def errorPrint(error):
-    print(f"Error: {error}")
-
-
 # 讀取 SPI 腳位訊號
 def ReadChannel(channel):
     adc = spi.xfer2([1, (8 + channel) << 4, 0])
@@ -222,6 +218,7 @@ def writeSensorDataToCloudDatabase(db, data):
 
 # 讀取感測器數據，並同步至雲端
 def sensor_process():
+    global db
     while True:
         try:
             humidity, temperature = Adafruit_DHT.read_retry(
@@ -229,24 +226,9 @@ def sensor_process():
             )  # 讀取溫濕度訊號
 
             # 讀取 SPI 腳位
-            light = ReadChannel(1)  # 光照感測器
             soilHumidity = ReadChannel(0)  # 土壤濕度感測器
+            light = ReadChannel(1)  # 光照感測器
             water = ReadChannel(2)  # 水位
-
-            # 檢查、顯示及上傳溫濕度數據
-            if humidity is not None and temperature is not None:
-                print(
-                    f"==================\n溫度: {temperature:.1f}°C ｜ 濕度: {humidity:.1f}%"
-                )
-
-            if light is not None:
-                print("光照感測器：", light)
-
-            if soilHumidity is not None:
-                print("土壤濕度數據：", abs(soilHumidity - 1000) / 7)
-
-            if water is not None:
-                print("水位：", water)
 
             soilHumidity_persen = abs(soilHumidity - 1000) / 7  # 轉換為 % 數
             sensors_data = {
@@ -255,7 +237,7 @@ def sensor_process():
                 "light": light,
                 "soilHumidity": f"{soilHumidity_persen:.1f}",
                 "water": water,
-                "timestamp": datetime.datetime.utcnow(),
+                "timestamp": datetime.datetime.now(ZoneInfo("Asia/Taipei")),
             }
 
             # 獲取當前週的文件引用
@@ -279,6 +261,10 @@ def plantLights():
         else:
             GPIO.output(LEDPin, GPIO.LOW)
 
+        # GPIO.output(LEDPin, GPIO.HIGH)
+        # time.sleep(1)
+        # GPIO.output(LEDPin, GPIO.LOW)
+
         time.sleep(1)
 
 
@@ -294,6 +280,21 @@ def pumpingMotor():
             GPIO.output(PumpingMotorPin, GPIO.LOW)
         else:
             GPIO.output(PumpingMotorPin, GPIO.LOW)
+        # else:
+        #     time.sleep(15)
+    #     control_number = input("請輸入抽水馬達操作碼（1.啟動 2.關閉）：", None)
+
+    #     if control_number.strip() != "":
+    #         if control_number == "1":
+    #             GPIO.output(PumpingMotorPin, GPIO.HIGH)
+    #             print("馬達已啟動")
+    #         elif control_number == "2":
+    #             GPIO.output(PumpingMotorPin, GPIO.LOW)
+    #             print("馬達已關閉")
+    #         else:
+    #             print("操作碼無效")
+    #     else:
+    #         print("請輸入操作碼")
 
 
 # === 語音交互 輔助函式 =============================================== #
@@ -620,6 +621,7 @@ def assistant():
 
 def data_analysis():
     global db
+
     while True:
         dataAnalysisTrendsToFirestore(db)
         time.sleep(600)  # 十分鐘重新分析最新趨勢
@@ -641,5 +643,5 @@ dataAnalysisTrend_thread = multiprocessing.Process(target=data_analysis)  # 趨�
 sensor_process_thread.start()
 plantLights_thread.start()
 pumpingMotor_thread.start()
-# assistant_thread.start()
+assistant_thread.start()
 dataAnalysisTrend_thread.start()

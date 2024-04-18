@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from scipy.stats import linregress
 
 import statistics
+from collections import defaultdict
 
 sensor_data_list = []  # 感測器數據列表
 
@@ -221,7 +223,9 @@ def dataTrendText(db):
 
 # 生成趨勢分析dictionary
 def data_analysis_trends_to_firestore(sensor_data):
-    analysis_structures = []
+    # 使用defaultdict创建一个以感测器类型为键，趋势分析列表为值的字典
+    analysis_results_by_sensor = defaultdict(list)
+
     # 欲分析的時間範圍
     time_ranges = {
         "hour": timedelta(hours=1),
@@ -241,7 +245,13 @@ def data_analysis_trends_to_firestore(sensor_data):
         # 過濾指定時間段的數據
         filtered_data = filter_data_by_time(sensor_data, time_range)
         # 循環每個感測器的數據
-        for sensor_type in ["temperature", "humidity", "soilHumidity", "water"]:
+        for sensor_type in [
+            "temperature",
+            "humidity",
+            "soilHumidity",
+            "light",
+            "water",
+        ]:
             # 將綜合數據過濾為單個感測器數據及Timestamp
             sensor_data_points = [
                 {"timestamp": data["timestamp"].timestamp(), "value": data[sensor_type]}
@@ -264,23 +274,38 @@ def data_analysis_trends_to_firestore(sensor_data):
                     "r_value": r_value,
                     "p_value": p_value,
                     "std_err": std_err,
-                    "timestamp": datetime.now(),
+                    "timestamp": datetime.now(ZoneInfo("Asia/Taipei")),
                 }
-                analysis_structures.append(analysis_structure)
+                analysis_results_by_sensor[sensor_type].append(analysis_structure)
 
-    return analysis_structures
+    return analysis_results_by_sensor
 
 
 # 將分析結果寫入 Firestore
-def store_analysis_results(db, analysis_structures):
-    for analysis in analysis_structures:
-        doc_id = f"{analysis['sensorType']}-{analysis['timeRange']}"
+def store_analysis_results(db, analysis_results_by_sensor):
+    for sensor_type, analysis_list in analysis_results_by_sensor.items():
+        # 创建文档ID，格式为"sensor_type"
+        doc_id = f"{sensor_type}"
 
+        # 获取或创建感测器类型对应的文档引用
         doc_ref = db.collection("trend_analysis").document(doc_id)
-        doc_ref.set(analysis)
+
+        # 准备要上传的数据，这里我们构建一个以时间范围为键的字典
+        # 每个键对应的值是在该时间范围内的趋势分析结果
+        trends_by_time_range = {}
+        for analysis in analysis_list:
+            time_range = analysis["timeRange"]
+            # 将时间范围作为键，趋势分析结果作为值添加到trends_by_time_range字典中
+            if time_range not in trends_by_time_range:
+                trends_by_time_range[time_range] = []
+            trends_by_time_range[time_range].append(analysis)
+
+        # 更新或设置文档内容，这里我们使用set方法，如果需要更新可以使用update方法
+        # 使用set时，如果文档不存在，它将被创建
+        doc_ref.set({"trends_by_time_range": trends_by_time_range})
 
 
 def dataAnalysisTrendsToFirestore(db):
-    sensor_data = get_data(db)  # 返回感測器的數據
-    analysis_structures = data_analysis_trends_to_firestore(sensor_data)
-    store_analysis_results(db, analysis_structures)
+    sensor_data = get_data(db)  # 假設這個函數返回感測器的數據
+    analysis_results_by_sensor = data_analysis_trends_to_firestore(sensor_data)
+    store_analysis_results(db, analysis_results_by_sensor)
